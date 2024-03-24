@@ -1,4 +1,4 @@
-# 3DPAWS_Hawaii
+# 3DPAWS - Hawaii
 This is a detailed account of how the Nugent Lab at the University of Hawai'i has constructed the National Center for Atmospheric Research's (NCAR's) 3D Printed Automatic Weather Station (3D-PAWS). In addition to the original PowerPoints, we've provided wiring diagrams for the instruments requiring soldering and some additional instructions for construction. The Nugent Lab does not claim any of the original ideas or conceptions for the project, this repository simply serves as an unofficial extension of the project documenting additional information gained during our lab's experience during construction.  
 
 ## Main Instruments
