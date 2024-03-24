@@ -13,10 +13,7 @@ These instruments all utilize Qwiic or M5-Stack cables - plug-and-play cables - 
 
 Of the five instruments, two of them transmit data over digital channels while the remaining instruments utilize the popular I2C digital connections. Digital sensors and I2C sensors represent two different methods of interfacing sensors with microcontrollers. As a group without a formal education in electronic construction, we've provided the small summary of these two sensors below as a learning place for other novices as well. 
 
-Honeywell manufactures a variety of Hall effect sensors, which can be either analog or digital, depending on the specific model and its intended application. To determine whether a particular Honeywell Hall effect magnetic sensor is analog or digital, you need to consider the nature of its output:
-
-
-### Digital Hall Effect Sensors
+### Digital Sensors
 
 1. **Output**: Digital sensors typically produce a discrete, digital output that communicates the measurement in binary form, using a series of 0s and 1s - either ON or OFF. This output changes state when the sensor field intensity (in our case, the magnetic field intensity) crosses a certain predefined threshold and can be based on specific protocols like I2C, SPI, or UART. Unlike analog sensors (not present in this project), the output is already digital, meaning the microcontroller can read and process it directly. 
 2. **Application**: Suited for applications where the presence or absence of a variable provides key information needed. For the magnetic sensor used in this project (the Honeywell Hall Effects Magnetic Sensor), common uses include speed detection, proximity switching, and position sensing where only the detection of a magnetic field (above a certain threshold) is required, not its precise strength.  
