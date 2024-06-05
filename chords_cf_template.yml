@@ -1,0 +1,469 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: AWS CloudFormation Template for a CHORDS Portal.
+
+#####################################################################
+Parameters:
+  01KeyName:
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+  ChordsAdminPw:
+    Default: chords_ec_demo
+    Description: CHORDS database admin password (this is not the portal admin password). Choose carefully.
+    Type: String
+
+  ChordsGuestPw:
+    Default: guest
+    Description: CHORDS database guest password. Choose carefully.
+    Type: String
+
+  ChordsVersion:
+    AllowedValues:
+      - "1.1.0-rc1"
+      - "development"
+    Default: "1.1.0-rc1"
+    Description: The version of CHORDS to deploy (matches the Docker Hub tags)
+    Type: String
+
+  GitBranch:
+    AllowedValues:
+    - master
+    - development
+    Default: development
+    Description: CHORDS git branch.
+    Type: String
+
+  GrafanaAdminPw:
+    Default: admin
+    Description: The password for admin access to Grafana. Once Grafana is initialized with this password, it can only be changed from the Grafana admin web page. Replace this with a secure password.
+    Type: String
+
+  ChordsEmailAddress:
+    Default: unknown@gmail.com
+    Description: An email account that will send CHORDS password reset instructions, Grafana alerts, etc. DO NOT use a personal or business account for this; instead set up an account specifically for CHORDS (e.g. at gmail).
+    Type: String
+
+  ChordsEmailPassword:
+    Default: unknown
+    Description: The password for the email account that will send CHORDS password reset instructions, Grafana alerts, etc. DO NOT use a personal or business account for this; instead set up an account specifically for CHORDS (e.g. at gmail).
+    Type: String
+
+  ChordsEmailServer:
+    Default: smtp.gmail.com
+    Description: The email server that can relay CHORDS password reset instructions, Grafana alerts, etc. You must have an account on this service.
+    Type: String
+
+  ChordsEmailPort:
+    Default: 587
+    Description: The SERVER PORT for the email server that can relay CHORDS password reset instructions, Grafana alerts, etc. You must have an account on this service.
+    Type: String
+
+  SecretKeyBase:
+    Default: 9a9c4d7e7bed3d85a53bfaaee9cefd338c2ab5fda573cd933dfd3fea4178004425cb50a06df00a0c59a1d353defb9bd3e49fb5f47a791dec7daff95b2a6d080d
+    Description: SECRET_KEY_BASE for Rails. This MUST be a randomly generated and 256 bits long.
+    Type: String
+
+  DbRetention:
+    AllowedValues:
+    - INF
+    - 4w
+    - 12w
+    - 24w
+    - 52w
+    - 104w
+    Default: 52w
+    Description: Database retention duration (weeks, INF=forever)
+    Type: String
+
+  KapacitorEnabled:
+    AllowedValues:
+    - false
+    - true
+    Default: false
+    Description: Enable kapacitor (WARNING, opens a security hole)
+    Type: String
+
+  InstanceType:
+    AllowedValues:
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.xlarge
+
+    ConstraintDescription: Must be a valid EC2 instance type.
+    Default: t2.micro
+    Description: CHORDS EC2 instance type
+    Type: String
+
+  SSHLocation:
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
+    Description: ' The IP address range that can be used to SSH to the EC2 instances'
+    MaxLength: '18'
+    MinLength: '9'
+    Type: String
+
+      #  SecretKeyBase:
+      # Default: 9a9c4d7e7bed3d85a53bfaaee9cefd338c2ab5fda573cd933dfd3fea4178004425cb50a06df00a0c59a1d353defb9bd3e49fb5f47a791dec7daff95b2a6d089d
+      # Description: SECRET_KEY_BASE for Rails. This MUST be a randomly generated and 256 bits long.
+      # Type: String
+
+#####################################################################
+
+Mappings:
+  AWSInstanceType2Arch:
+    t2.micro:
+      Arch: HVM64
+    t2.small:
+      Arch: HVM64
+    t2.medium:
+      Arch: HVM64
+    t2.large:
+      Arch: HVM64
+    t2.xlarge:
+      Arch: HVM64
+
+  AWSRegionArch2AMI:
+    us-east-1:
+      HVM64: ami-0533f2ba8a1995cf9
+    us-east-2:
+      HVM64: ami-089c6f2e3866f0f14
+    us-west-1:
+      HVM64: ami-0a245a00f741d6301 
+    us-west-2:
+      HVM64: ami-05b622b5fa0269787
+
+#####################################################################
+Resources:
+
+  ChordsEIP:
+    Properties:
+      InstanceId:
+        Ref: ChordsServer
+    Type: AWS::EC2::EIP
+
+  ChordsServer:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT30M
+    Properties:
+      ImageId:
+        Fn::FindInMap:
+        - AWSRegionArch2AMI
+        - Ref: AWS::Region
+        - Fn::FindInMap:
+          - AWSInstanceType2Arch
+          - Ref: InstanceType
+          - Arch
+      InstanceType:
+        Ref: InstanceType
+      KeyName:
+        Ref: 01KeyName
+      SecurityGroups:
+      - Ref: ChordsServerSecurityGroup
+      Tags:
+      - Key: Name
+        Value:
+          Ref: AWS::StackName
+      - Key: ChordsType
+        Value: Portal
+      # ChordsServer::Properties::UserData instructs cfn to install and
+      # run CHORDS via full_install.
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - '#!/bin/bash -xe
+
+              '
+            - 'yum update -y aws-cfn-bootstrap
+
+              '
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - Ref: AWS::StackId
+            - '         --resource ChordsServer '
+            - '         --configsets full_install '
+            - '         --region '
+            - Ref: AWS::Region
+            - '
+
+              '
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - Ref: AWS::StackId
+            - '         --resource ChordsServer '
+            - '         --region '
+            - Ref: AWS::Region
+            - '
+
+              '
+    Metadata:
+      AWS::CloudFormation::Init:
+        # configSets specifies the order that cfn_init runs
+        # the other AWS::CloudFormation::Init: types.
+        configSets:
+          full_install:
+          - install_cfn
+          - sys_update
+          - yum_extras
+          - install_docker
+          - install_docker_compose
+          - chords_setup
+          - chords_config
+          - docker_pull
+          - chords_service
+
+        # configure cfn.
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[main]
+
+                    '
+                  - stack=
+                  - Ref: AWS::StackId
+                  - '
+
+                    '
+                  - region=
+                  - Ref: AWS::Region
+                  - '
+
+                    '
+              group: root
+              mode: '000400'
+              owner: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content:
+                Fn::Join:
+                - ''
+                - - '[cfn-auto-reloader-hook]
+
+                    '
+                  - 'triggers=post.update
+
+                    '
+                  - 'path=Resources.ChordsServer.Metadata.AWS::CloudFormation::Init
+
+                    '
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '         --stack '
+                  - Ref: AWS::StackName
+                  - '         --resource ChordsServer '
+                  - '         --configsets full_install '
+                  - '         --region '
+                  - Ref: AWS::Region
+                  - '
+
+                    '
+                  - 'runas=root
+
+                    '
+              /lib/systemd/system/cfn-hup.service:
+                content:
+                  Fn::Join:
+                  - ''
+                  - - '[Unit]
+
+                      '
+                    - 'Description=cfn-hup daemon
+
+                      '
+                    - '[Service]
+
+                      '
+                    - 'Type=simple
+
+                      '
+                    - 'ExecStart=/opt/aws/bin/cfn-hup
+
+                      '
+                    - 'Restart=always
+
+                      '
+                    - '[Install]
+
+                      '
+                    - 'WantedBy=multi-user.target
+
+                      '
+        
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                - /etc/cfn/cfn-hup.conf
+                - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+
+        # Perform a yum update for the system.
+        sys_update:
+          commands:
+            01_update:
+              command: yum update -y
+
+        # Install some useful packages.
+        yum_extras:
+          packages:
+            yum:
+              git: []
+              python3: []
+
+        # Install docker as a service.
+        install_docker:
+          packages:
+            yum:
+              docker: []
+          commands:
+            01_enable:
+              command: "systemctl enable docker"
+            02_start:
+              command: "systemctl start docker"
+
+        # Install docker-compose
+        install_docker_compose:
+          commands:
+            # Install docker-compose.
+            01_get_docker_compose:
+              command: "curl -L https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose"
+            02_chmod_docker_compose:
+              command: "chmod +x /usr/local/bin/docker-compose"
+
+        # Set up CHORDS
+        chords_setup:
+          commands:
+            00_python_pip:
+              command: "pip3 install sh future"
+            01_var_lib_chords:
+              command: "mkdir -p /var/lib/chords"
+            02_get_chords_control:
+              command: !Sub "curl -L https://raw.github.com/earthcubeprojects-chords/chords/${GitBranch}/chords_control > /var/lib/chords/chords_control"
+            03_get_docker_compose_yml:
+              command: !Sub "curl -L https://raw.github.com/earthcubeprojects-chords/chords/${GitBranch}/docker-compose.yml > /var/lib/chords/docker-compose.yml"
+
+        # Create the CHORDS and docker-compose configuration files.
+        chords_config:
+          files:
+            # Create the basic configuration in .env:
+            /var/lib/chords/.env:
+              content: !Sub |
+                CHORDS_ADMIN_PW=${ChordsAdminPw}
+                CHORDS_GUEST_PW=${ChordsGuestPw}
+                CHORDS_EMAIL_ADDRESS=${ChordsEmailAddress}
+                CHORDS_EMAIL_PASSWORD=${ChordsEmailPassword}
+                CHORDS_EMAIL_SERVER=${ChordsEmailServer}
+                CHORDS_EMAIL_PORT=${ChordsEmailPort}
+                GRAFANA_ADMIN_PW=${GrafanaAdminPw}
+                GIT_BRANCH=${GitBranch}
+                DOCKER_TAG=${ChordsVersion}
+                RAILS_ENV=production
+                DB_RETENTION=${DbRetention}
+                SECRET_KEY_BASE=${SecretKeyBase}
+                KAPACITOR_ENABLED=${KapacitorEnabled}
+                CHORDS_HTTP_PORT=80
+                GRAFANA_HTTP_PORT=3000
+                PROXY=
+                SSL_ENABLED=false
+                SSL_EMAIL=
+                SSL_HOST=
+
+          commands:
+            # Create chords.yml from .env. The .env file will also be updated.
+            01_create_chords_yml:
+              command: "cd /var/lib/chords && python3 chords_control --backwards"
+
+        # Install docker-compose.yml and get the CHORDS images.
+        docker_pull:
+          commands:
+            # Pull the CHORDS images.
+            02_docker_pull:
+              command: "cd /var/lib/chords && /usr/local/bin/docker-compose pull"
+
+        # Install and enable the chords service
+        chords_service:
+          files:
+            /var/lib/chords/chords.service:
+              content: |
+                [Unit]
+                Description=CHORDS Portal
+                After=docker.service
+                Requires=docker.service
+
+                [Service]
+                Type=simple
+                WorkingDirectory=/var/lib/chords
+                ExecStartPre=/usr/local/bin/docker-compose -p chords down
+                ExecStart=/usr/local/bin/docker-compose    -p chords up
+                ExecStop=/usr/local/bin/docker-compose     -p chords down
+                Restart=always
+                RestartSec=60
+
+                [Install]
+                WantedBy=multi-user.target
+              group: root
+              mode: '000755'
+              owner: root
+
+          commands:
+            # Enable the chords service
+            01_enable:
+              command: "systemctl enable /var/lib/chords/chords.service"
+            # Start the chords service
+            02_startchords:
+              command: "systemctl start chords"
+
+  ChordsServerSecurityGroup:
+    Properties:
+      GroupDescription: Enable HTTP and SSH access
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        IpProtocol: tcp
+        ToPort: '80'
+      - CidrIp: 0.0.0.0/0
+        FromPort: '443'
+        IpProtocol: tcp
+        ToPort: '443'
+      - CidrIp:
+          Ref: SSHLocation
+        FromPort: '22'
+        IpProtocol: tcp
+        ToPort: '22'
+      - CidrIp: 0.0.0.0/0
+        FromPort: '25'
+        IpProtocol: tcp
+        ToPort: '25'
+      - CidrIp: 0.0.0.0/0
+        FromPort: '3000'
+        IpProtocol: tcp
+        ToPort: '3000'
+      - CidrIp: 0.0.0.0/0
+        FromPort: '9092'
+        IpProtocol: tcp
+        ToPort: '9092'
+    Type: AWS::EC2::SecurityGroup
+
+#####################################################################
+Outputs:
+  WebsiteURL:
+    Description: URL for newly created CHORDS Portal
+    Value:
+      Fn::Join:
+      - ''
+      - - http://
+        - Fn::GetAtt:
+          - ChordsServer
+          - PublicDnsName
+        - ''
+
+
